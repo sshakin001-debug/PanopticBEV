@@ -1,12 +1,17 @@
 import glob
 from itertools import chain
 import os
+from pathlib import Path
+import platform
 import cv2
 import torch
 import torch.utils.data as data
 import umsgpack
 import json
 from panoptic_bev.data.transform import *
+
+# Windows detection helper
+IS_WINDOWS = platform.system() == 'Windows'
 
 
 class BEVKitti360Dataset(data.Dataset):
@@ -26,22 +31,22 @@ class BEVKitti360Dataset(data.Dataset):
         self.transform = transform
         self.rgb_cameras = ['front']
 
-        # Folders
-        self._img_dir = os.path.join(seam_root_dir, BEVKitti360Dataset._IMG_DIR)
-        self._bev_msk_dir = os.path.join(seam_root_dir, BEVKitti360Dataset._BEV_MSK_DIR, BEVKitti360Dataset._BEV_DIR)
-        self._front_msk_dir = os.path.join(seam_root_dir, BEVKitti360Dataset._FRONT_MSK_DIR, "front")
-        self._weights_msk_dir = os.path.join(seam_root_dir, BEVKitti360Dataset._WEIGHTS_MSK_DIR)
-        self._lst_dir = os.path.join(seam_root_dir, BEVKitti360Dataset._LST_DIR)
+        # Folders - using pathlib for cross-platform compatibility
+        self._img_dir = str(Path(seam_root_dir) / BEVKitti360Dataset._IMG_DIR)
+        self._bev_msk_dir = str(Path(seam_root_dir) / BEVKitti360Dataset._BEV_MSK_DIR / BEVKitti360Dataset._BEV_DIR)
+        self._front_msk_dir = str(Path(seam_root_dir) / BEVKitti360Dataset._FRONT_MSK_DIR / "front")
+        self._weights_msk_dir = str(Path(seam_root_dir) / BEVKitti360Dataset._WEIGHTS_MSK_DIR)
+        self._lst_dir = str(Path(seam_root_dir) / BEVKitti360Dataset._LST_DIR)
 
         # Load meta-data and split
         self._meta, self._images, self._img_map = self._load_split()
 
     # Load the train or the validation split
     def _load_split(self):
-        with open(os.path.join(self.seam_root_dir, BEVKitti360Dataset._METADATA_FILE), "rb") as fid:
+        with open(str(Path(self.seam_root_dir) / BEVKitti360Dataset._METADATA_FILE), "rb") as fid:
             metadata = umsgpack.unpack(fid, encoding="utf-8")
 
-        with open(os.path.join(self._lst_dir, self.split_name + ".txt"), "r") as fid:
+        with open(str(Path(self._lst_dir) / (self.split_name + ".txt")), "r", encoding='utf-8', errors='ignore') as fid:
             lst = fid.readlines()
             lst = [line.strip() for line in lst]
 
@@ -53,7 +58,7 @@ class BEVKitti360Dataset(data.Dataset):
 
         img_map = {}
         for camera in self.rgb_cameras:
-            with open(os.path.join(self._img_dir, "{}.json".format(camera))) as fp:
+            with open(str(Path(self._img_dir) / "{}.json".format(camera)), encoding='utf-8', errors='ignore') as fp:
                 map_list = json.load(fp)
                 map_dict = {k: v for d in map_list for k, v in d.items()}
                 img_map[camera] = map_dict
@@ -68,7 +73,7 @@ class BEVKitti360Dataset(data.Dataset):
         scene, frame_id = img_desc["id"].split(";")
 
         # Get the RGB file names
-        img_file = [os.path.join(self.kitti_root_dir, self._img_map[camera]["{}.png".format(img_desc['id'])])
+        img_file = [str(Path(self.kitti_root_dir) / self._img_map[camera]["{}.png".format(img_desc['id'])])
                     for camera in self.rgb_cameras]
         if all([(not os.path.exists(img)) for img in img_file]):
             raise IOError("RGB image not found! Scene: {}, Frame: {}".format(scene, frame_id))
@@ -77,15 +82,15 @@ class BEVKitti360Dataset(data.Dataset):
         img = [Image.open(rgb).convert(mode="RGB") for rgb in img_file]
 
         # Load the BEV mask
-        bev_msk_file = os.path.join(self._bev_msk_dir, "{}.png".format(img_desc['id']))
+        bev_msk_file = str(Path(self._bev_msk_dir) / "{}.png".format(img_desc['id']))
         bev_msk = [Image.open(bev_msk_file)]
 
         # Load the front mask
-        front_msk_file = os.path.join(self._front_msk_dir, "{}.png".format(img_desc['id']))
+        front_msk_file = str(Path(self._front_msk_dir) / "{}.png".format(img_desc['id']))
         front_msk = [Image.open(front_msk_file)]
 
         # Load the weight map
-        weights_msk_file = os.path.join(self._weights_msk_dir, "{}.png".format(img_desc['id']))
+        weights_msk_file = str(Path(self._weights_msk_dir) / "{}.png".format(img_desc['id']))
         weights_msk = cv2.imread(weights_msk_file, cv2.IMREAD_UNCHANGED).astype(float)
         if weights_msk is not None:
             weights_msk_combined = (weights_msk[:, :, 0] + (weights_msk[:, :, 1] / 10000)) * 10000
@@ -190,23 +195,23 @@ class BEVNuScenesDataset(data.Dataset):
         self.transform = transform
         self.rgb_cameras = ['front']
 
-        # Folders
-        self._img_dir = os.path.join(seam_root_dir, BEVNuScenesDataset._IMG_DIR)
-        self._bev_msk_dir = os.path.join(seam_root_dir, BEVNuScenesDataset._BEV_MSK_DIR, BEVNuScenesDataset._BEV_DIR)
-        self._front_msk_dir = os.path.join(seam_root_dir, BEVNuScenesDataset._FRONT_MSK_DIR, "front")
-        self._weights_msk_dir = os.path.join(seam_root_dir, BEVNuScenesDataset._WEIGHTS_MSK_DIR)
-        self._lst_dir = os.path.join(seam_root_dir, BEVNuScenesDataset._LST_DIR)
-        self._vf_msk_dir = os.path.join(seam_root_dir, BEVNuScenesDataset._VF_MSK_DIR)
+        # Folders - using pathlib for cross-platform compatibility
+        self._img_dir = str(Path(seam_root_dir) / BEVNuScenesDataset._IMG_DIR)
+        self._bev_msk_dir = str(Path(seam_root_dir) / BEVNuScenesDataset._BEV_MSK_DIR / BEVNuScenesDataset._BEV_DIR)
+        self._front_msk_dir = str(Path(seam_root_dir) / BEVNuScenesDataset._FRONT_MSK_DIR / "front")
+        self._weights_msk_dir = str(Path(seam_root_dir) / BEVNuScenesDataset._WEIGHTS_MSK_DIR)
+        self._lst_dir = str(Path(seam_root_dir) / BEVNuScenesDataset._LST_DIR)
+        self._vf_msk_dir = str(Path(seam_root_dir) / BEVNuScenesDataset._VF_MSK_DIR)
 
         # Load meta-data and split
         self._meta, self._images, self._img_map = self._load_split()
 
     # Load the train or the validation split
     def _load_split(self):
-        with open(os.path.join(self.seam_root_dir, BEVNuScenesDataset._METADATA_FILE), "rb") as fid:
+        with open(str(Path(self.seam_root_dir) / BEVNuScenesDataset._METADATA_FILE), "rb") as fid:
             metadata = umsgpack.unpack(fid, encoding="utf-8")
 
-        with open(os.path.join(self._lst_dir, self.split_name + ".txt"), "r") as fid:
+        with open(str(Path(self._lst_dir) / (self.split_name + ".txt")), "r", encoding='utf-8', errors='ignore') as fid:
             lst = fid.readlines()
             lst = [line.strip() for line in lst]
 
@@ -217,7 +222,7 @@ class BEVNuScenesDataset(data.Dataset):
 
         img_map = {}
         for camera in self.rgb_cameras:
-            with open(os.path.join(self._img_dir, "{}.json".format(camera))) as fp:
+            with open(str(Path(self._img_dir) / "{}.json".format(camera)), encoding='utf-8', errors='ignore') as fp:
                 map_list = json.load(fp)
                 map_dict = {k: v for d in map_list for k, v in d.items()}
                 img_map[camera] = map_dict
@@ -231,7 +236,7 @@ class BEVNuScenesDataset(data.Dataset):
         img_desc = self._images[item_idx]
 
         # Get the RGB file names
-        img_file = [os.path.join(self.nuscenes_root_dir, self._img_map[camera]["{}.png".format(img_desc['id'])])
+        img_file = [str(Path(self.nuscenes_root_dir) / self._img_map[camera]["{}.png".format(img_desc['id'])])
                     for camera in self.rgb_cameras]
         if all([(not os.path.exists(img)) for img in img_file]):
             raise IOError("RGB image not found! Name: {}".format(img_desc['id']))
@@ -240,15 +245,15 @@ class BEVNuScenesDataset(data.Dataset):
         img = [Image.open(rgb).convert(mode="RGB") for rgb in img_file]
 
         # Load the BEV mask
-        bev_msk_file = os.path.join(self._bev_msk_dir, "{}.png".format(img_desc['id']))
+        bev_msk_file = str(Path(self._bev_msk_dir) / "{}.png".format(img_desc['id']))
         bev_msk = [Image.open(bev_msk_file)]
 
         # Load the VF mask
-        vf_msk_file = os.path.join(self._vf_msk_dir, "{}.png".format(img_desc["id"]))
+        vf_msk_file = str(Path(self._vf_msk_dir) / "{}.png".format(img_desc["id"]))
         vf_msk = [Image.open(vf_msk_file)]
 
         # Load the weight map
-        weights_msk_file = os.path.join(self._weights_msk_dir, "{}.png".format(img_desc['id']))
+        weights_msk_file = str(Path(self._weights_msk_dir) / "{}.png".format(img_desc['id']))
         weights_msk = cv2.imread(weights_msk_file, cv2.IMREAD_UNCHANGED).astype(float)
         if weights_msk is not None:
             weights_msk_combined = (weights_msk[:, :, 0] + (weights_msk[:, :, 1] / 10000)) * 10000
