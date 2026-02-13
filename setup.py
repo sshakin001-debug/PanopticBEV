@@ -1,7 +1,51 @@
 from os import path, listdir
+import platform
 
 import setuptools
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+
+
+def get_cuda_architectures():
+    """
+    Get CUDA architectures including sm_120 for RTX 5060 Ti.
+    Compiles for multiple architectures for compatibility.
+    
+    Supports:
+    - sm_70: V100, GTX 1080 Ti
+    - sm_75: RTX 2080, T4
+    - sm_80: A100, RTX 3090
+    - sm_86: RTX 3080, 3090, 4090 (Ampere/Ada)
+    - sm_89: RTX 4060, 4070, 4080 (Ada)
+    - sm_90: H100 (Hopper)
+    - sm_120: RTX 5060 Ti, 5070, 5080, 5090 (Blackwell)
+    """
+    import torch
+    
+    # Base architectures for broad compatibility
+    arch_list = [
+        "70",   # V100, GTX 1080 Ti
+        "75",   # RTX 2080, T4
+        "80",   # A100, RTX 3090
+        "86",   # RTX 3080, 3090, 4090 (Ampere/Ada)
+        "89",   # RTX 4060, 4070, 4080 (Ada)
+        "90",   # H100 (Hopper)
+        "120",  # RTX 5060 Ti, 5070, 5080, 5090 (Blackwell)
+    ]
+    
+    # Check if we can detect the current GPU's architecture
+    if torch.cuda.is_available():
+        capability = torch.cuda.get_device_capability()
+        current_arch = f"{capability[0]}{capability[1]}"
+        if current_arch not in arch_list:
+            arch_list.append(current_arch)
+            print(f"[setup.py] Detected GPU arch sm_{current_arch}, adding to build")
+    
+    # Generate NVCC flags
+    nvcc_flags = []
+    for arch in arch_list:
+        nvcc_flags.append(f"-gencode=arch=compute_{arch},code=sm_{arch}")
+    
+    return nvcc_flags
 
 
 def find_sources(root_dir):
@@ -15,18 +59,29 @@ def find_sources(root_dir):
 
 
 def make_extension(name, package):
+    nvcc_flags = [
+        "--expt-extended-lambda",
+        "-O3",
+        "--use_fast_math",
+    ] + get_cuda_architectures()
+    
+    # Windows-specific flags
+    cxx_flags = ["-O3"]
+    if platform.system() == 'Windows':
+        # MSVC-compatible flags
+        cxx_flags = ["/O2"]
+        nvcc_flags.append("-Xcompiler=/wd4819")  # Disable Unicode warnings
+    
     return CUDAExtension(
         name="{}.{}._backend".format(package, name),
         sources=find_sources(path.join("src", name)),
         extra_compile_args={
-            "cxx": ["-O3"],
-            "nvcc": [
-                "--expt-extended-lambda",
-                "-gencode=arch=compute_120,code=sm_120",
-            ],
+            "cxx": cxx_flags,
+            "nvcc": nvcc_flags,
         },
         include_dirs=["include/"],
     )
+
 
 here = path.abspath(path.dirname(__file__))
 
@@ -40,13 +95,17 @@ setuptools.setup(
     url="http://panoptic-bev.cs.uni-freiburg.de/",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.4",
-        "Programming Language :: Python :: 3.5",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Operating System :: OS Independent",
+        "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
     ],
 
-    python_requires=">=3, <4",
+    python_requires=">=3.7, <4",
 
     # Package description
     packages=[

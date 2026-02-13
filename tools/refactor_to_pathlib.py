@@ -77,6 +77,156 @@ def convert_os_path_join(content):
     return content
 
 
+def convert_os_path_split(content):
+    """
+    Convert os.path.split() to Path attributes.
+    
+    Pattern: head, tail = os.path.split(path)
+    Becomes: head = Path(path).parent; tail = Path(path).name
+    """
+    # Pattern: head, tail = os.path.split(path)
+    pattern = r'(\w+),\s*(\w+)\s*=\s*os\.path\.split\(([^)]+)\)'
+    
+    def replace_split(match):
+        head_var, tail_var, path = match.groups()
+        return f'{head_var} = Path({path}).parent\n{tail_var} = Path({path}).name'
+    
+    content = re.sub(pattern, replace_split, content)
+    
+    # Also handle os.path.split() used in other contexts
+    # Return tuple: (parent, name)
+    pattern2 = r'os\.path\.split\(([^)]+)\)'
+    
+    def replace_split2(match):
+        path = match.group(1)
+        return f'(Path({path}).parent, Path({path}).name)'
+    
+    content = re.sub(pattern2, replace_split2, content)
+    
+    return content
+
+
+def convert_os_path_splitext(content):
+    """
+    Convert os.path.splitext() to Path attributes.
+    
+    Pattern: stem, ext = os.path.splitext(path)
+    Becomes: stem = Path(path).stem; ext = Path(path).suffix
+    """
+    # Pattern: stem, ext = os.path.splitext(path)
+    pattern = r'(\w+),\s*(\w+)\s*=\s*os\.path\.splitext\(([^)]+)\)'
+    
+    def replace_splitext(match):
+        stem_var, ext_var, path = match.groups()
+        return f'{stem_var} = Path({path}).stem\n{ext_var} = Path({path}).suffix'
+    
+    content = re.sub(pattern, replace_splitext, content)
+    
+    # Also handle os.path.splitext() used in other contexts
+    # Return tuple: (stem, suffix)
+    pattern2 = r'os\.path\.splitext\(([^)]+)\)'
+    
+    def replace_splitext2(match):
+        path = match.group(1)
+        return f'(Path({path}).stem, Path({path}).suffix)'
+    
+    content = re.sub(pattern2, replace_splitext2, content)
+    
+    return content
+
+
+def convert_string_concat_paths(content):
+    """
+    Convert path string concatenation to Path operations.
+    
+    Pattern: "path/" + filename or 'path/' + filename
+    Becomes: Path("path") / filename
+    """
+    # Pattern: "path/" + filename or 'path/' + filename
+    pattern = r'(["\'][^"\']*[\\/]["\'])\s*\+\s*(\w+)'
+    
+    def replace_concat(match):
+        prefix = match.group(1).strip('"\'')
+        var = match.group(2)
+        # Remove trailing slash from prefix
+        prefix = prefix.rstrip('/\\')
+        return f'Path("{prefix}") / {var}'
+    
+    content = re.sub(pattern, replace_concat, content)
+    
+    # Also handle: var + "/" + filename
+    pattern2 = r'(\w+)\s*\+\s*["\'][\\/]["\']\s*\+\s*(\w+)'
+    
+    def replace_concat2(match):
+        var1 = match.group(1)
+        var2 = match.group(2)
+        return f'Path({var1}) / {var2}'
+    
+    content = re.sub(pattern2, replace_concat2, content)
+    
+    return content
+
+
+def convert_fstring_paths(content):
+    """
+    Convert f-string paths to Path operations.
+    
+    Pattern: f"{var1}/{var2}"
+    Becomes: Path(var1) / var2
+    """
+    # Simple case: f"{var1}/{var2}"
+    pattern = r'f["\']\{([^}]+)\}/([^"\']+)["\']'
+    
+    def replace_fstring(match):
+        var1 = match.group(1)
+        rest = match.group(2)
+        
+        # Split the rest by /
+        parts = rest.split('/')
+        
+        result = f'Path({var1})'
+        for part in parts:
+            if part.startswith('{') and part.endswith('}'):
+                # Variable
+                result += f' / {part[1:-1]}'
+            elif part:
+                # String literal
+                result += f' / "{part}"'
+        
+        return result
+    
+    content = re.sub(pattern, replace_fstring, content)
+    
+    return content
+
+
+def flag_hardcoded_paths(content, filepath):
+    """
+    Flag hardcoded Unix paths that need Windows attention.
+    
+    Returns a list of warnings for hardcoded paths.
+    """
+    warnings = []
+    
+    # Find hardcoded Unix paths
+    unix_paths = re.findall(r'["\']/home/[^"\']+["\']', content)
+    if unix_paths:
+        warnings.append(f"WARNING: {filepath} contains hardcoded Unix paths:")
+        for p in unix_paths:
+            warnings.append(f"  {p}")
+        warnings.append("  These should be converted to relative paths or config variables")
+    
+    # Find hardcoded /tmp paths
+    tmp_paths = re.findall(r'["\']/tmp/[^"\']*["\']', content)
+    if tmp_paths:
+        warnings.append(f"WARNING: {filepath} contains hardcoded /tmp paths:")
+        for p in tmp_paths:
+            warnings.append(f"  {p}")
+        warnings.append("  These should use a cross-platform temp directory")
+    
+    return warnings
+
+
 def convert_os_path_functions(content):
     """Convert various os.path functions to Path methods."""
     
@@ -99,17 +249,23 @@ def convert_os_path_functions(content):
         # os.path.abspath(p) -> Path(p).resolve()
         (r'os\.path\.abspath\(([^)]+)\)', r'Path(\1).resolve()'),
         
-        # os.path.splitext(p) -> (Path(p).parent / Path(p).stem, Path(p).suffix)
-        # This one is tricky - we leave it as a comment for manual review
-        
-        # os.path.split(p) -> (Path(p).parent, Path(p).name)
-        # This one is also tricky - leave for manual review
-        
         # os.path.getsize(p) -> Path(p).stat().st_size
         (r'os\.path\.getsize\(([^)]+)\)', r'Path(\1).stat().st_size'),
         
         # os.path.expanduser(p) -> Path(p).expanduser()
         (r'os\.path\.expanduser\(([^)]+)\)', r'Path(\1).expanduser()'),
+        
+        # os.path.realpath(p) -> Path(p).resolve()
+        (r'os\.path\.realpath\(([^)]+)\)', r'Path(\1).resolve()'),
+        
+        # os.path.isabs(p) -> Path(p).is_absolute()
+        (r'os\.path\.isabs\(([^)]+)\)', r'Path(\1).is_absolute()'),
+        
+        # os.path.getmtime(p) -> Path(p).stat().st_mtime
+        (r'os\.path\.getmtime\(([^)]+)\)', r'Path(\1).stat().st_mtime'),
+        
+        # os.path.getctime(p) -> Path(p).stat().st_ctime
+        (r'os\.path\.getctime\(([^)]+)\)', r'Path(\1).stat().st_ctime'),
         
         # os.makedirs(p) -> Path(p).mkdir(parents=True, exist_ok=True)
         (r'os\.makedirs\(([^)]+)\)', r'Path(\1).mkdir(parents=True, exist_ok=True)'),
@@ -171,29 +327,37 @@ def convert_file_to_pathlib(filepath, dry_run=False):
         dry_run: If True, only print changes without applying them
     
     Returns:
-        bool: True if changes were made
+        tuple: (bool: True if changes were made, list: warnings)
     """
     filepath = Path(filepath)
+    warnings = []
     
     if not filepath.suffix == '.py':
-        return False
+        return False, warnings
     
     original_content = filepath.read_text()
     content = original_content
     
     # Check if file uses os.path
     if 'os.path' not in content and 'os.makedirs' not in content and 'os.mkdir' not in content:
-        return False
+        return False, warnings
+    
+    # Flag hardcoded paths before conversion
+    warnings = flag_hardcoded_paths(content, filepath)
     
     # Apply conversions
     content = add_pathlib_import(content)
     content = convert_os_path_join(content)
+    content = convert_os_path_split(content)
+    content = convert_os_path_splitext(content)
+    content = convert_string_concat_paths(content)
+    content = convert_fstring_paths(content)
     content = convert_os_path_functions(content)
     content = convert_open_with_path_join(content)
     
     # Check if anything changed
     if content == original_content:
-        return False
+        return False, warnings
     
     if dry_run:
         print(f"Would modify: {filepath}")
@@ -203,12 +367,12 @@ def convert_file_to_pathlib(filepath, dry_run=False):
         for i, (old, new) in enumerate(zip(original_lines, new_lines)):
             if old != new:
                 print(f"  Line {i+1}: {old[:60]}... -> {new[:60]}...")
-        return True
+        return True, warnings
     
     # Write the changes
     filepath.write_text(content)
     print(f"Refactored: {filepath}")
-    return True
+    return True, warnings
 
 
 def find_python_files(path):
@@ -248,6 +412,11 @@ def main():
         default=[],
         help='Patterns to exclude (can be used multiple times)'
     )
+    parser.add_argument(
+        '--check-hardcoded',
+        action='store_true',
+        help='Check for hardcoded Unix paths that need attention'
+    )
     
     args = parser.parse_args()
     
@@ -273,9 +442,14 @@ def main():
     
     # Process files
     modified_count = 0
+    all_warnings = []
+    
     for py_file in py_files:
-        if convert_file_to_pathlib(py_file, dry_run=args.dry_run):
+        modified, warnings = convert_file_to_pathlib(py_file, dry_run=args.dry_run)
+        if modified:
             modified_count += 1
+        if warnings:
+            all_warnings.extend(warnings)
     
     print(f"\n{'='*60}")
     if args.dry_run:
@@ -285,10 +459,28 @@ def main():
         print(f"Refactoring complete: {modified_count} file(s) modified")
     print(f"{'='*60}")
     
+    # Print warnings
+    if all_warnings:
+        print("\n" + "="*60)
+        print("WARNINGS - Manual review required:")
+        print("="*60)
+        for warning in all_warnings:
+            print(warning)
+    
     if modified_count > 0:
         print("\nNOTE: Please review the changes carefully!")
         print("Some complex patterns may need manual adjustment.")
         print("Test your code after refactoring.")
+    
+    # Print usage tips
+    print("\n" + "-"*60)
+    print("TIPS:")
+    print("-"*60)
+    print("• Use --check-hardcoded to find Unix-specific paths")
+    print("• Use --exclude to skip files (e.g., --exclude test_)")
+    print("• Always test after refactoring!")
+    print("• Complex patterns like os.path.split() are converted")
+    print("  but may need manual review.")
 
 
 if __name__ == "__main__":
