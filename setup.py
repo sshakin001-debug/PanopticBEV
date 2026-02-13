@@ -20,7 +20,10 @@ def make_extension(name, package):
         sources=find_sources(path.join("src", name)),
         extra_compile_args={
             "cxx": ["-O3"],
-            "nvcc": ["--expt-extended-lambda"],
+            "nvcc": [
+                "--expt-extended-lambda",
+                "-gencode=arch=compute_120,code=sm_120",
+            ],
         },
         include_dirs=["include/"],
     )
