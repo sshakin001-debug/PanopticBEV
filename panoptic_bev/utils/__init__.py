@@ -56,6 +56,31 @@ try:
 except ImportError:
     pass
 
+# Import 3D distance estimation utilities
+try:
+    from .kitti360_3d_loader import (
+        Object3D,
+        KITTI3603DLoader
+    )
+except ImportError:
+    pass
+
+try:
+    from .accurate_distance_estimator import (
+        DistanceEstimate,
+        AccurateDistanceEstimator
+    )
+except ImportError:
+    pass
+
+try:
+    from .distance_3d import (
+        Distance3D,
+        load_3d_distances
+    )
+except ImportError:
+    pass
+
 __all__ = [
     # Config resolver
     'WindowsPathResolver',
@@ -81,4 +106,11 @@ __all__ = [
     # Calibration
     'KITTI360Calibration',
     'load_calibration_from_dataset',
+    # 3D distance estimation
+    'Object3D',
+    'KITTI3603DLoader',
+    'DistanceEstimate',
+    'AccurateDistanceEstimator',
+    'Distance3D',
+    'load_3d_distances',
 ]

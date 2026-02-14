@@ -19,6 +19,15 @@ try:
 except ImportError:
     pass
 
+try:
+    from .distance_head_3d import (
+        DistanceHead3D,
+        DistanceLoss3D,
+        PanopticBEVWith3DDistance
+    )
+except ImportError:
+    pass
+
 __all__ = [
     # Main model
     'PanopticBevNet',
@@ -27,4 +36,8 @@ __all__ = [
     'DistanceHead',
     'PanopticBEVWithDistance',
     'create_model_with_distance',
+    # 3D Distance head
+    'DistanceHead3D',
+    'DistanceLoss3D',
+    'PanopticBEVWith3DDistance',
 ]
