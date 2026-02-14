@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from inplace_abn import ABN
+from panoptic_bev.utils.batch_norm import ABN
 
 
 class RPNHead(nn.Module):

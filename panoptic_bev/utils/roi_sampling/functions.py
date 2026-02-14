@@ -1,11 +1,173 @@
 import torch
 import torch.autograd as autograd
+import torch.nn.functional as F
 from torch.autograd.function import once_differentiable
 
-from panoptic_bev.utils.roi_sampling import _backend
+try:
+    from . import _backend
+    HAS_BACKEND = True
+except ImportError:
+    HAS_BACKEND = False
+    _backend = None
+    import warnings
+    warnings.warn("ROI sampling CUDA backend not available. Using PyTorch fallback implementation.")
 
-_INTERPOLATION = {"bilinear": _backend.Interpolation.Bilinear, "nearest": _backend.Interpolation.Nearest}
-_PADDING = {"zero": _backend.PaddingMode.Zero, "border": _backend.PaddingMode.Border}
+
+# Fallback enums for when CUDA backend is not available
+class InterpolationFallback:
+    Bilinear = 0
+    Nearest = 1
+
+
+class PaddingModeFallback:
+    Zero = 0
+    Border = 1
+
+
+if HAS_BACKEND:
+    _INTERPOLATION = {"bilinear": _backend.Interpolation.Bilinear, "nearest": _backend.Interpolation.Nearest}
+    _PADDING = {"zero": _backend.PaddingMode.Zero, "border": _backend.PaddingMode.Border}
+else:
+    _INTERPOLATION = {"bilinear": InterpolationFallback.Bilinear, "nearest": InterpolationFallback.Nearest}
+    _PADDING = {"zero": PaddingModeFallback.Zero, "border": PaddingModeFallback.Border}
+
+
+def _roi_sampling_forward_pytorch(x, bbx, idx, roi_size, interpolation, padding, valid_mask):
+    """
+    Pure PyTorch fallback implementation of ROI sampling forward pass.
+    
+    Uses grid_sample for bilinear interpolation.
+    """
+    batch_size, num_channels, height, width = x.shape
+    num_rois = bbx.size(0)
+    roi_h, roi_w = roi_size
+    
+    # Initialize output
+    output = torch.zeros(num_rois, num_channels, roi_h, roi_w, 
+                        dtype=x.dtype, device=x.device)
+    
+    if valid_mask:
+        mask_out = torch.zeros(num_rois, roi_h, roi_w, 
+                              dtype=torch.bool, device=x.device)
+    else:
+        mask_out = None
+    
+    # Create sampling grid for all ROIs at once
+    # bbx format: [y0, x0, y1, x1]
+    for roi_idx in range(num_rois):
+        batch_idx = idx[roi_idx].item()
+        y0, x0, y1, x1 = bbx[roi_idx].tolist()
+        
+        # ROI dimensions
+        roi_height = max(y1 - y0, 1.0)
+        roi_width = max(x1 - x0, 1.0)
+        
+        # Create normalized grid coordinates
+        # Grid coordinates are in [-1, 1] range for grid_sample
+        grid_y = torch.linspace(0, roi_h - 1, roi_h, device=x.device, dtype=x.dtype)
+        grid_x = torch.linspace(0, roi_w - 1, roi_w, device=x.device, dtype=x.dtype)
+        
+        # Map ROI coordinates to image coordinates
+        # y_img = y0 + (y_roi + 0.5) / roi_h * (y1 - y0)
+        # x_img = x0 + (x_roi + 0.5) / roi_w * (x1 - x0)
+        y_coords = y0 + (grid_y + 0.5) * roi_height / roi_h
+        x_coords = x0 + (grid_x + 0.5) * roi_width / roi_w
+        
+        # Normalize to [-1, 1] for grid_sample
+        y_norm = 2.0 * y_coords / height - 1.0
+        x_norm = 2.0 * x_coords / width - 1.0
+        
+        # Create meshgrid
+        grid_yy, grid_xx = torch.meshgrid(y_norm, x_norm, indexing='ij')
+        grid = torch.stack([grid_xx, grid_yy], dim=-1).unsqueeze(0)  # 1 x H x W x 2
+        
+        # Sample using grid_sample
+        padding_mode = 'border' if padding == PaddingModeFallback.Border else 'zeros'
+        mode = 'bilinear' if interpolation == InterpolationFallback.Bilinear else 'nearest'
+        
+        sampled = F.grid_sample(
+            x[batch_idx:batch_idx+1], 
+            grid,
+            mode=mode,
+            padding_mode=padding_mode,
+            align_corners=False
+        )
+        
+        output[roi_idx] = sampled[0]
+        
+        # Compute valid mask if requested
+        if valid_mask:
+            # Check which sample points are within the image bounds
+            valid_y = (y_coords >= 0) & (y_coords < height)
+            valid_x = (x_coords >= 0) & (x_coords < width)
+            valid_grid = valid_y.unsqueeze(1) & valid_x.unsqueeze(0)
+            mask_out[roi_idx] = valid_grid
+    
+    if valid_mask:
+        return output, mask_out
+    return output, None
+
+
+def _roi_sampling_backward_pytorch(dy, bbx, idx, input_shape, interpolation, padding):
+    """
+    Pure PyTorch fallback implementation of ROI sampling backward pass.
+    
+    Uses grid_sample's gradient computation.
+    """
+    batch_size, num_channels, height, width = input_shape
+    num_rois = dy.size(0)
+    roi_h, roi_w = dy.size(2), dy.size(3)
+    
+    # Initialize gradient output
+    dx = torch.zeros(batch_size, num_channels, height, width, 
+                    dtype=dy.dtype, device=dy.device)
+    
+    for roi_idx in range(num_rois):
+        batch_idx = idx[roi_idx].item()
+        y0, x0, y1, x1 = bbx[roi_idx].tolist()
+        
+        # ROI dimensions
+        roi_height = max(y1 - y0, 1.0)
+        roi_width = max(x1 - x0, 1.0)
+        
+        # Create normalized grid coordinates
+        grid_y = torch.linspace(0, roi_h - 1, roi_h, device=dy.device, dtype=dy.dtype)
+        grid_x = torch.linspace(0, roi_w - 1, roi_w, device=dy.device, dtype=dy.dtype)
+        
+        y_coords = y0 + (grid_y + 0.5) * roi_height / roi_h
+        x_coords = x0 + (grid_x + 0.5) * roi_width / roi_w
+        
+        y_norm = 2.0 * y_coords / height - 1.0
+        x_norm = 2.0 * x_coords / width - 1.0
+        
+        grid_yy, grid_xx = torch.meshgrid(y_norm, x_norm, indexing='ij')
+        grid = torch.stack([grid_xx, grid_yy], dim=-1).unsqueeze(0)
+        
+        # For backward pass, we need to use autograd
+        grid.requires_grad_(True)
+        
+        # Create a zero input for gradient computation
+        dummy_input = torch.zeros(1, num_channels, height, width, 
+                                 dtype=dy.dtype, device=dy.device, requires_grad=True)
+        
+        padding_mode = 'border' if padding == PaddingModeFallback.Border else 'zeros'
+        mode = 'bilinear' if interpolation == InterpolationFallback.Bilinear else 'nearest'
+        
+        sampled = F.grid_sample(
+            dummy_input, 
+            grid,
+            mode=mode,
+            padding_mode=padding_mode,
+            align_corners=False
+        )
+        
+        # Backprop to get gradient w.r.t. input
+        sampled.backward(dy[roi_idx:roi_idx+1])
+        
+        # Accumulate gradient
+        dx[batch_idx] += dummy_input.grad[0]
+    
+    return dx
 
 
 class ROISampling(autograd.Function):
@@ -24,7 +186,10 @@ class ROISampling(autograd.Function):
         except KeyError:
             raise ValueError("Unknown padding {}".format(padding))
 
-        y, mask = _backend.roi_sampling_forward(x, bbx, idx, roi_size, ctx.interpolation, ctx.padding, valid_mask)
+        if HAS_BACKEND:
+            y, mask = _backend.roi_sampling_forward(x, bbx, idx, roi_size, ctx.interpolation, ctx.padding, valid_mask)
+        else:
+            y, mask = _roi_sampling_forward_pytorch(x, bbx, idx, roi_size, ctx.interpolation, ctx.padding, valid_mask)
 
         if not torch.is_floating_point(x):
             ctx.mark_non_differentiable(y)
@@ -45,7 +210,11 @@ class ROISampling(autograd.Function):
         assert torch.is_floating_point(dy), "ROISampling.backward is only defined for floating point types"
         bbx, idx = ctx.saved_tensors
 
-        dx = _backend.roi_sampling_backward(dy, bbx, idx, ctx.input_shape, ctx.interpolation, ctx.padding)
+        if HAS_BACKEND:
+            dx = _backend.roi_sampling_backward(dy, bbx, idx, ctx.input_shape, ctx.interpolation, ctx.padding)
+        else:
+            dx = _roi_sampling_backward_pytorch(dy, bbx, idx, ctx.input_shape, ctx.interpolation, ctx.padding)
+        
         return dx, None, None, None, None, None, None
 
 

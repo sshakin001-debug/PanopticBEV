@@ -1,5 +1,5 @@
 import torch
-from inplace_abn import active_group, set_active_group
+from panoptic_bev.utils.batch_norm import active_group, set_active_group
 
 from panoptic_bev.utils.bbx import shift_boxes
 from panoptic_bev.utils.misc import Empty

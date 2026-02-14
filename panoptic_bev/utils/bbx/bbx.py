@@ -2,7 +2,15 @@ from math import log
 
 import torch
 
-from . import _backend
+try:
+    from . import _backend
+    HAS_BACKEND = True
+except ImportError:
+    HAS_BACKEND = False
+    _backend = None
+    import warnings
+    warnings.warn("BBX CUDA backend not available. Using PyTorch fallback implementation.")
+
 
 __all__ = [
     "extract_boxes",
@@ -15,6 +23,86 @@ __all__ = [
     "mask_overlap",
     "bbx_overlap"
 ]
+
+
+def _extract_boxes_pytorch(mask, num_instances):
+    """
+    Pure PyTorch implementation of bounding box extraction from instance mask.
+    
+    Parameters
+    ----------
+    mask : torch.Tensor
+        A tensor with shape H x W containing an instance segmentation mask
+    num_instances : int
+        The number of instances to look for
+    
+    Returns
+    -------
+    bbx : torch.Tensor
+        A tensor with shape `num_instances` x 4 containing the coordinates of 
+        the bounding boxes in "corners" form (y0, x0, y1, x1)
+    """
+    device = mask.device
+    dtype = mask.dtype if torch.is_floating_point(mask) else torch.float32
+    
+    # Initialize output boxes
+    bbx = torch.zeros(num_instances, 4, dtype=dtype, device=device)
+    
+    # For each instance, find the bounding box
+    for i in range(num_instances):
+        instance_mask = (mask == i + 1)  # Instance IDs start from 1
+        
+        if instance_mask.any():
+            # Find non-zero coordinates
+            rows = torch.any(instance_mask, dim=1)
+            cols = torch.any(instance_mask, dim=0)
+            
+            if rows.any() and cols.any():
+                y_indices = torch.where(rows)[0]
+                x_indices = torch.where(cols)[0]
+                
+                bbx[i, 0] = y_indices[0].float()  # y0
+                bbx[i, 1] = x_indices[0].float()  # x0
+                bbx[i, 2] = y_indices[-1].float() + 1  # y1
+                bbx[i, 3] = x_indices[-1].float() + 1  # x1
+    
+    return bbx
+
+
+def _mask_count_pytorch(bbx, int_mask):
+    """
+    Pure PyTorch implementation of mask counting using integral image.
+    
+    Parameters
+    ----------
+    bbx : torch.Tensor
+        A tensor of bounding boxes in "corners" form with shape N x 4
+    int_mask : torch.Tensor
+        An integral image with shape (H+1) x (W+1)
+    
+    Returns
+    -------
+    count : torch.Tensor
+        A tensor with shape N containing the count of non-zero pixels in each box
+    """
+    num_boxes = bbx.size(0)
+    counts = torch.zeros(num_boxes, dtype=int_mask.dtype, device=int_mask.device)
+    
+    for i in range(num_boxes):
+        y0, x0, y1, x1 = bbx[i].long().tolist()
+        
+        # Clamp to valid range
+        h, w = int_mask.size(0) - 1, int_mask.size(1) - 1
+        y0 = max(0, min(y0, h))
+        y1 = max(0, min(y1, h))
+        x0 = max(0, min(x0, w))
+        x1 = max(0, min(x1, w))
+        
+        # Sum using integral image: S = I[y1,x1] - I[y0,x1] - I[y1,x0] + I[y0,x0]
+        counts[i] = (int_mask[y1, x1] - int_mask[y0, x1] - 
+                     int_mask[y1, x0] + int_mask[y0, x0])
+    
+    return counts
 
 
 def extract_boxes(mask, num_instances):
@@ -35,7 +123,11 @@ def extract_boxes(mask, num_instances):
     """
     if mask.ndimension() == 2:
         mask = mask.unsqueeze(0)
-    return _backend.extract_boxes(mask, num_instances)
+    
+    if HAS_BACKEND:
+        return _backend.extract_boxes(mask, num_instances)
+    else:
+        return _extract_boxes_pytorch(mask[0], num_instances)
 
 
 def shift_boxes(bbx, shift, dim=-1, scale_clip=log(1000. / 16.)):
@@ -186,7 +278,11 @@ def mask_overlap(bbx, mask):
     int_mask[1:, 1:] = mask > 0
     int_mask = int_mask.cumsum(0).cumsum(1)
 
-    count = _backend.mask_count(bbx, int_mask)
+    if HAS_BACKEND:
+        count = _backend.mask_count(bbx, int_mask)
+    else:
+        count = _mask_count_pytorch(bbx, int_mask)
+    
     area = (bbx[:, 2:] - bbx[:, :2]).prod(dim=1)
 
     return count / area

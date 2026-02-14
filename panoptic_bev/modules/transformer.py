@@ -2,7 +2,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import torch
 import kornia
-from inplace_abn import ABN
+from panoptic_bev.utils.batch_norm import ABN
 
 from panoptic_bev.utils.transformer import get_init_homography
 

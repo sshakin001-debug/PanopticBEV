@@ -1,0 +1,35 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/panoptic_bev_venv/Scripts/python.exe",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/panoptic_bev",
+        "${workspaceFolder}/panoptic_bev_venv/Lib/site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/panoptic_bev",
+        "${workspaceFolder}/panoptic_bev_venv/Lib/site-packages"
+    ],
+    "python.analysis.include": [
+        "${workspaceFolder}/panoptic_bev/**/*.py",
+        "${workspaceFolder}/scripts/**/*.py",
+        "${workspaceFolder}/tools/**/*.py"
+    ],
+    "python.analysis.exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.git",
+        "**/panoptic_bev_venv"
+    ],
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true,
+    "files.associations": {
+        "*.cu": "cuda-cpp",
+        "*.cuh": "cuda-cpp"
+    }
+}

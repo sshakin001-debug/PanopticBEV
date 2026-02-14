@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/panoptic_bev_venv/Lib/site-packages/torch/include",
+                "${workspaceFolder}/panoptic_bev_venv/Lib/site-packages/torch/include/torch/csrc/api/include",
+                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/include",
+                "${env:LOCALAPPDATA}/Programs/Python/Python312/Include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "USE_CUDA"
+            ],
+            "compilerPath": "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/bin/nvcc.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        }
+    ],
+    "version": 4
+}

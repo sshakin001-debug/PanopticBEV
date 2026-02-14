@@ -7,7 +7,7 @@ import tensorboardX as tensorboard
 import torch
 import torch.utils.data as data
 from torch import distributed
-from inplace_abn import ABN
+from panoptic_bev.utils.batch_norm import ABN
 
 from panoptic_bev.config import load_config
 

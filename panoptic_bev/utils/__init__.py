@@ -2,7 +2,7 @@
 PanopticBEV Utilities Package
 
 This package provides utility functions for the PanopticBEV project,
-including Windows compatibility utilities.
+including Windows compatibility utilities, distance estimation, and calibration.
 """
 
 # Import Windows compatibility utilities for easy access
@@ -36,6 +36,26 @@ try:
 except ImportError:
     pass
 
+# Import distance estimation utilities
+try:
+    from .distance_estimation import (
+        BEVDistanceEstimator,
+        DistanceMeasurement,
+        DistanceLoss,
+        create_estimator_from_dataset
+    )
+except ImportError:
+    pass
+
+# Import calibration utilities
+try:
+    from .kitti360_calibration import (
+        KITTI360Calibration,
+        load_calibration_from_dataset
+    )
+except ImportError:
+    pass
+
 __all__ = [
     # Config resolver
     'WindowsPathResolver',
@@ -53,4 +73,12 @@ __all__ = [
     # Windows symlink
     'create_symlink',
     'remove_link',
+    # Distance estimation
+    'BEVDistanceEstimator',
+    'DistanceMeasurement',
+    'DistanceLoss',
+    'create_estimator_from_dataset',
+    # Calibration
+    'KITTI360Calibration',
+    'load_calibration_from_dataset',
 ]

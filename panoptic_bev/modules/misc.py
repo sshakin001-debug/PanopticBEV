@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as functional
 
-from inplace_abn import ABN
+from panoptic_bev.utils.batch_norm import ABN
 
 
 class ActivatedAffine(ABN):

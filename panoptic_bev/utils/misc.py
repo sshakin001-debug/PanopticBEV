@@ -5,7 +5,7 @@ from functools import partial
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from inplace_abn import InPlaceABN, InPlaceABNSync, ABN
+from panoptic_bev.utils.batch_norm import InPlaceABNWrapper as InPlaceABN, InPlaceABNSyncWrapper as InPlaceABNSync, ABN
 from torchvision import ops
 
 from panoptic_bev.modules.misc import ActivatedAffine, ActivatedGroupNorm

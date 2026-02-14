@@ -257,25 +257,25 @@ class BEVTransform:
 
         # Label transformations
         if bev_msk is not None:
-            bev_msk = np.stack([np.array(m, dtype=np.int32, copy=False) for m in bev_msk], axis=0)
+            bev_msk = np.stack([np.asarray(m, dtype=np.int32) for m in bev_msk], axis=0)
             bev_msk, cat, iscrowd = self._compact_labels(bev_msk, cat, iscrowd)
 
         if weights_msk is not None:
-            weights_msk = [np.array(m, dtype=np.int32, copy=False) for m in weights_msk]
+            weights_msk = [np.asarray(m, dtype=np.int32) for m in weights_msk]
             weights_msk = np.stack(weights_msk, axis=0)
 
         if front_msk is not None:
-            front_msk = np.stack([np.array(m, dtype=np.int32, copy=False) for m in front_msk], axis=0)
+            front_msk = np.stack([np.asarray(m, dtype=np.int32) for m in front_msk], axis=0)
 
         # Convert labels to torch and extract bounding boxes
         if bev_msk is not None:
-            bev_msk = torch.from_numpy(bev_msk.astype(np.long))
+            bev_msk = torch.from_numpy(bev_msk.astype(np.int64))
         if front_msk is not None:
-            front_msk = torch.from_numpy(front_msk.astype(np.long))
+            front_msk = torch.from_numpy(front_msk.astype(np.int64))
         if weights_msk is not None:
-            weights_msk = torch.from_numpy(weights_msk.astype(np.float))
+            weights_msk = torch.from_numpy(weights_msk.astype(np.float64))
         if cat is not None:
-            cat = torch.from_numpy(cat.astype(np.long))
+            cat = torch.from_numpy(cat.astype(np.int64))
             bbx = extract_boxes(bev_msk, cat.numel())
         else:
             bbx = None

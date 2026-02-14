@@ -1,0 +1,26 @@
+{
+    "include": [
+        "panoptic_bev",
+        "scripts",
+        "tools"
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/.git",
+        "panoptic_bev_venv"
+    ],
+    "ignore": [],
+    "defineConstant": {
+        "DEBUG": true
+    },
+    "stubPath": "",
+    "reportMissingImports": "warning",
+    "reportMissingTypeStubs": false,
+    "pythonVersion": "3.12",
+    "pythonPlatform": "Windows",
+    "extraPaths": [
+        ".",
+        "./panoptic_bev"
+    ]
+}

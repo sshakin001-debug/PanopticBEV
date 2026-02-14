@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import torch.multiprocessing as mp
 try:
     mp.set_start_method('spawn', force=True)
@@ -15,7 +21,7 @@ import torch
 import torch.optim as optim
 import torch.utils.data as data
 from torch import distributed
-from inplace_abn import ABN
+from panoptic_bev.utils.batch_norm import ABN
 
 from panoptic_bev.config import load_config
 
@@ -133,12 +139,36 @@ def create_run_directories(args, rank):
 
 
 def make_dataloader(args, config, rank, world_size):
+    """Create Windows-optimized dataloaders."""
     dl_config = config['dataloader']
+    
+    # Import Windows utilities
+    from panoptic_bev.utils.windows_dataloader import create_safe_dataloader, get_memory_optimized_config
+    
+    log_info("Creating train dataloader for %s dataset", args.train_dataset, debug=args.debug)
+    log_info("Creating val dataloader for %s dataset", args.val_dataset, debug=args.debug)
+    
+    # Get RTX 5060 Ti optimized config
+    gpu_config = get_memory_optimized_config()
+    is_wsl = os.path.exists('/proc/version') and 'microsoft' in open('/proc/version').read().lower()
+    
+    # Determine worker count
+    if is_wsl:
+        train_workers = dl_config.getint("train_workers", 4)
+        val_workers = dl_config.getint("val_workers", 2)
+        persistent = True
+        pin_memory = True
+    else:
+        # Native Windows - use optimized settings
+        train_workers = 4  # Optimized value
+        val_workers = 0    # Validation doesn't need workers
+        persistent = True  # KEY for performance
+        pin_memory = True  # Safe with spawn method
+    
+    log_info("DataLoader: workers=%d, persistent=%s, pin_memory=%s", 
+             train_workers, persistent, pin_memory, debug=args.debug)
 
-    log_info("Creating train dataloader for {} dataset".format(args.train_dataset), debug=args.debug)
-    log_info("Creating val dataloader for {} dataset".format(args.val_dataset), debug=args.debug)
-
-    # Train dataloaders
+    # Train transforms
     train_tf = BEVTransform(shortest_size=dl_config.getint("shortest_size"),
                             longest_max_size=dl_config.getint("longest_max_size"),
                             rgb_mean=dl_config.getstruct("rgb_mean"),
@@ -159,21 +189,7 @@ def make_dataloader(args, config, rank, world_size):
         train_db = BEVNuScenesDataset(seam_root_dir=args.seam_root_dir, dataset_root_dir=args.dataset_root_dir,
                                       split_name=dl_config['train_set'], transform=train_tf)
 
-    if not args.debug:
-        train_sampler = DistributedARBatchSampler(train_db, dl_config.getint('train_batch_size'), world_size, rank, True)
-        train_dl = torch.utils.data.DataLoader(train_db,
-                                               batch_sampler=train_sampler,
-                                               collate_fn=iss_collate_fn,
-                                               pin_memory=True,
-                                               num_workers=dl_config.getint("train_workers"))
-    else:
-        train_dl = torch.utils.data.DataLoader(train_db,
-                                               batch_size=dl_config.getint('train_batch_size'),
-                                               collate_fn=iss_collate_fn,
-                                               pin_memory=True,
-                                               num_workers=dl_config.getint("train_workers"))
-
-    # Validation datalaader
+    # Validation transforms
     val_tf = BEVTransform(shortest_size=dl_config.getint("shortest_size"),
                           longest_max_size=dl_config.getint("longest_max_size"),
                           rgb_mean=dl_config.getstruct("rgb_mean"),
@@ -188,20 +204,54 @@ def make_dataloader(args, config, rank, world_size):
         val_db = BEVNuScenesDataset(seam_root_dir=args.seam_root_dir, dataset_root_dir=args.dataset_root_dir,
                                     split_name=dl_config['val_set'], transform=val_tf)
 
+    # Create optimized DataLoaders
     if not args.debug:
+        # Distributed training
+        train_sampler = DistributedARBatchSampler(train_db, dl_config.getint('train_batch_size'), world_size, rank, True)
         val_sampler = DistributedARBatchSampler(val_db, dl_config.getint("val_batch_size"), world_size, rank, False)
-        val_dl = torch.utils.data.DataLoader(val_db,
-                                             batch_sampler=val_sampler,
-                                             collate_fn=iss_collate_fn,
-                                             pin_memory=True,
-                                             num_workers=dl_config.getint("val_workers"))
+        
+        # Use optimized DataLoader
+        train_dl = create_safe_dataloader(
+            train_db,
+            batch_size=None,  # Using batch_sampler
+            batch_sampler=train_sampler,
+            collate_fn=iss_collate_fn,
+            num_workers=train_workers,
+            persistent_workers=persistent and train_workers > 0,
+            pin_memory=pin_memory,
+            drop_last=True
+        )
+        
+        val_dl = create_safe_dataloader(
+            val_db,
+            batch_size=None,
+            batch_sampler=val_sampler,
+            collate_fn=iss_collate_fn,
+            num_workers=val_workers,
+            persistent_workers=False,  # Not needed for validation
+            pin_memory=pin_memory,
+            drop_last=False
+        )
     else:
-        val_dl = torch.utils.data.DataLoader(val_db,
-                                             batch_size=dl_config.getint("val_batch_size"),
-                                             collate_fn=iss_collate_fn,
-                                             pin_memory=True,
-                                             num_workers=dl_config.getint("val_workers"))
-
+        # Debug mode - single GPU
+        train_dl = create_safe_dataloader(
+            train_db,
+            batch_size=dl_config.getint('train_batch_size'),
+            collate_fn=iss_collate_fn,
+            num_workers=0,  # Always 0 in debug
+            shuffle=True,
+            drop_last=True
+        )
+        
+        val_dl = create_safe_dataloader(
+            val_db,
+            batch_size=dl_config.getint('val_batch_size'),
+            collate_fn=iss_collate_fn,
+            num_workers=0,
+            shuffle=False,
+            drop_last=False
+        )
+    
     return train_dl, val_dl
 
 
@@ -556,7 +606,7 @@ def validate(model, dataloader, **varargs):
 
             # Separate the normal and abnormal stats entries
             sem_conf_stat = stats['sem_conf']
-            rem_stats = {k: v for k, v in stats.items() if k is not "sem_conf"}
+            rem_stats = {k: v for k, v in stats.items() if k != "sem_conf"}
             if not varargs['debug']:
                 distributed.all_reduce(sem_conf_stat, distributed.ReduceOp.SUM)
 
@@ -638,8 +688,15 @@ def validate(model, dataloader, **varargs):
 
 def main(args):
     if not args.debug:
+        # Windows-compatible backend selection
+        import platform
+        if platform.system() == 'Windows':
+            backend = 'gloo'  # Windows doesn't support nccl
+        else:
+            backend = 'nccl'  # Linux/WSL use nccl for best performance
+        
         # Initialize multi-processing
-        distributed.init_process_group(backend='nccl', init_method='env://')
+        distributed.init_process_group(backend=backend, init_method='env://')
         device_id, device = args.local_rank, torch.device(args.local_rank)
         rank, world_size = distributed.get_rank(), distributed.get_world_size()
         torch.cuda.set_device(device_id)
@@ -794,4 +851,11 @@ def main(args):
 
 
 if __name__ == "__main__":
+    # Windows requires spawn method for multiprocessing
+    import multiprocessing as mp
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
+    
     main(parser.parse_args())

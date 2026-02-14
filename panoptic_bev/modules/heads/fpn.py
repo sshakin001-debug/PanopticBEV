@@ -3,7 +3,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from inplace_abn import ABN
+from panoptic_bev.utils.batch_norm import ABN
 from panoptic_bev.utils.roi_sampling.functions import roi_sampling
 from panoptic_bev.utils.parallel import PackedSequence
 
