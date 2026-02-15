@@ -251,7 +251,7 @@ class Perspective2OrthographicWarper(nn.Module):
 
         # Resample 3D feature map
         grid_coords = torch.stack([ucoords, zcoords], -1).clamp(-1.1, 1.1)
-        return F.grid_sample(features, grid_coords)
+        return F.grid_sample(features, grid_coords, align_corners=False)
 
 
     def _make_grid(self, extents, resolution):

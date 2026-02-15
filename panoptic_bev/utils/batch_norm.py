@@ -78,12 +78,16 @@ else:
 
         def forward(self, x):
             # Choose appropriate batch norm based on input dimensions
-            if x.dim() == 4:  # 2D input (N, C, H, W)
+            if x.dim() == 2:  # Flatten input (N, C) - reshape to 4D for batch norm
+                x = x.unsqueeze(-1).unsqueeze(-1)  # (N, C) -> (N, C, 1, 1)
+                x = self.bn2d(x)
+                x = x.squeeze(-1).squeeze(-1)  # Back to (N, C)
+            elif x.dim() == 4:  # 2D input (N, C, H, W)
                 x = self.bn2d(x)
             elif x.dim() == 5:  # 3D input (N, C, D, H, W)
                 x = self.bn3d(x)
             else:
-                raise ValueError(f"ABN expected 4D or 5D input, got {x.dim()}D")
+                raise ValueError(f"ABN expected 2D, 4D or 5D input, got {x.dim()}D")
             
             # Apply activation
             if self.activation == "leaky_relu":

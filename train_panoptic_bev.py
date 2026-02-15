@@ -35,7 +35,7 @@ platform_type = check_performance_mode()
 
 from panoptic_bev.config.config import load_config
 from panoptic_bev.data.dataset import BEVKitti360Dataset, BEVNuScenesDataset
-from panoptic_bev.models.panoptic_bev import PanopticBEV
+from panoptic_bev.models.panoptic_bev import PanopticBevNet as PanopticBEV
 from panoptic_bev.utils.windows_dataloader import create_safe_dataloader, get_memory_optimized_config
 
 
@@ -114,9 +114,9 @@ def create_optimized_dataloaders(config, args, rank=0, world_size=1):
     print(f"DataLoader config: workers={train_workers}, persistent={persistent_workers}, "
           f"pin_memory={pin_memory}, WSL={is_wsl_env}")
     
-    # Get paths from config or args
-    dataset_root = getattr(args, 'dataset_root_dir', config.get('dataset_root_dir', r'D:\datasets\kitti360'))
-    seam_root = getattr(args, 'seam_root_dir', config.get('seam_root_dir', r'D:\kitti360_panopticbev'))
+    # Get paths from args (with defaults)
+    dataset_root = getattr(args, 'dataset_root_dir', r'D:\datasets\kitti360\data_2d_raw')
+    seam_root = getattr(args, 'seam_root_dir', r'D:\kitti360_panopticbev')
     
     # Create datasets
     DatasetClass = BEVKitti360Dataset if args.dataset == 'kitti' else BEVNuScenesDataset
@@ -254,7 +254,7 @@ def main():
     print_system_info()
     
     # Load config
-    config = load_config(args.cfg, args.opts)
+    config = load_config(args.cfg)
     
     # Setup distributed if multi-GPU
     rank = args.local_rank

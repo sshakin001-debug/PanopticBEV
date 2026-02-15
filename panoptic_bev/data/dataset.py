@@ -65,36 +65,87 @@ class BEVKitti360Dataset(data.Dataset):
 
         meta = metadata["meta"]
         images = [img_desc for img_desc in metadata["images"] if img_desc["id"] in lst]
-
-        return meta, images, img_map
+        
+        # Filter out images with missing RGB files
+        valid_images = []
+        for img_desc in images:
+            try:
+                # Get the relative path from img_map
+                rel_path = img_map["front"]["{}.png".format(img_desc['id'])]
+                
+                # Handle path correctly - the img_map contains paths like "data_2d_raw/scene/..."
+                # If kitti_root_dir already ends with "data_2d_raw", we need to strip it from rel_path
+                kitti_root_normalized = str(Path(self.kitti_root_dir).as_posix().rstrip('/'))
+                rel_path_normalized = rel_path.replace('\\', '/')
+                
+                # Check if kitti_root_dir already contains data_2d_raw
+                if kitti_root_normalized.endswith('/data_2d_raw') or kitti_root_normalized.endswith('\\data_2d_raw') or kitti_root_normalized.endswith('data_2d_raw'):
+                    # Strip "data_2d_raw/" prefix from rel_path
+                    if rel_path_normalized.startswith('data_2d_raw/'):
+                        rel_path_normalized = rel_path_normalized[len('data_2d_raw/'):]
+                
+                img_file = str(Path(self.kitti_root_dir) / rel_path_normalized)
+                
+                if os.path.exists(img_file):
+                    valid_images.append(img_desc)
+                else:
+                    print(f"[Dataset] Skipping {img_desc['id']}: RGB image not found at {img_file}")
+            except KeyError:
+                print(f"[Dataset] Skipping {img_desc['id']}: Not found in image map")
+                continue
+        
+        print(f"[Dataset] Loaded {len(valid_images)} valid images (filtered out {len(images) - len(valid_images)} missing frames)")
+        
+        return meta, valid_images, img_map
 
     def _load_item(self, item_idx):
         img_desc = self._images[item_idx]
         scene, frame_id = img_desc["id"].split(";")
 
-        # Get the RGB file names
-        img_file = [str(Path(self.kitti_root_dir) / self._img_map[camera]["{}.png".format(img_desc['id'])])
-                    for camera in self.rgb_cameras]
-        if all([(not os.path.exists(img)) for img in img_file]):
-            raise IOError("RGB image not found! Scene: {}, Frame: {}".format(scene, frame_id))
+        # Get the relative path from img_map
+        rel_path = self._img_map["front"]["{}.png".format(img_desc['id'])]
+        
+        # Handle path correctly - the img_map contains paths like "data_2d_raw/scene/..."
+        # If kitti_root_dir already ends with "data_2d_raw", we need to strip it from rel_path
+        kitti_root_normalized = str(Path(self.kitti_root_dir).as_posix().rstrip('/'))
+        rel_path_normalized = rel_path.replace('\\', '/')
+        
+        # Check if kitti_root_dir already contains data_2d_raw
+        if kitti_root_normalized.endswith('/data_2d_raw') or kitti_root_normalized.endswith('\\data_2d_raw') or kitti_root_normalized.endswith('data_2d_raw'):
+            # Strip "data_2d_raw/" prefix from rel_path
+            if rel_path_normalized.startswith('data_2d_raw/'):
+                rel_path_normalized = rel_path_normalized[len('data_2d_raw/'):]
+        
+        img_file = str(Path(self.kitti_root_dir) / rel_path_normalized)
+        
+        if not os.path.exists(img_file):
+            raise IOError("RGB image not found! Scene: {}, Frame: {}, Path: {}".format(scene, frame_id, img_file))
 
         # Load the images
-        img = [Image.open(rgb).convert(mode="RGB") for rgb in img_file]
+        img = [Image.open(img_file).convert(mode="RGB")]
 
         # Load the BEV mask
         bev_msk_file = str(Path(self._bev_msk_dir) / "{}.png".format(img_desc['id']))
+        if not os.path.exists(bev_msk_file):
+            raise IOError("BEV mask not found! Scene: {}, Frame: {}".format(scene, frame_id))
         bev_msk = [Image.open(bev_msk_file)]
 
         # Load the front mask
         front_msk_file = str(Path(self._front_msk_dir) / "{}.png".format(img_desc['id']))
+        if not os.path.exists(front_msk_file):
+            raise IOError("Front mask not found! Scene: {}, Frame: {}".format(scene, frame_id))
         front_msk = [Image.open(front_msk_file)]
 
         # Load the weight map
         weights_msk_file = str(Path(self._weights_msk_dir) / "{}.png".format(img_desc['id']))
-        weights_msk = cv2.imread(weights_msk_file, cv2.IMREAD_UNCHANGED).astype(float)
-        if weights_msk is not None:
-            weights_msk_combined = (weights_msk[:, :, 0] + (weights_msk[:, :, 1] / 10000)) * 10000
-            weights_msk_combined = [Image.fromarray(weights_msk_combined.astype(np.int32))]
+        if os.path.exists(weights_msk_file):
+            weights_msk = cv2.imread(weights_msk_file, cv2.IMREAD_UNCHANGED)
+            if weights_msk is not None:
+                weights_msk = weights_msk.astype(float)
+                weights_msk_combined = (weights_msk[:, :, 0] + (weights_msk[:, :, 1] / 10000)) * 10000
+                weights_msk_combined = [Image.fromarray(weights_msk_combined.astype(np.int32))]
+            else:
+                weights_msk_combined = None
         else:
             weights_msk_combined = None
 
@@ -151,21 +202,30 @@ class BEVKitti360Dataset(data.Dataset):
         return len(self._images)
 
     def __getitem__(self, item):
-        img, bev_msk, front_msk, weights_msk,cat, iscrowd, calib, idx = self._load_item(item)
-        rec = self.transform(img=img, bev_msk=bev_msk, front_msk=front_msk, weights_msk=weights_msk, cat=cat,
-                             iscrowd=iscrowd, calib=calib)
-        size = (img[0].size[1], img[0].size[0])
+        try:
+            img, bev_msk, front_msk, weights_msk, cat, iscrowd, calib, idx = self._load_item(item)
+            rec = self.transform(img=img, bev_msk=bev_msk, front_msk=front_msk, weights_msk=weights_msk, cat=cat,
+                                 iscrowd=iscrowd, calib=calib)
+            size = (img[0].size[1], img[0].size[0])
 
-        # Close the files
-        for i in img:
-            i.close()
-        for m in bev_msk:
-            m.close()
-        for m in front_msk:
-            m.close()
+            # Close the files
+            for i in img:
+                i.close()
+            for m in bev_msk:
+                m.close()
+            for m in front_msk:
+                m.close()
 
-        rec["idx"] = idx
-        rec["size"] = size
+            rec["idx"] = idx
+            rec["size"] = size
+            return rec
+        except (IOError, FileNotFoundError) as e:
+            # Skip missing frames by returning the next valid frame
+            print(f"[Dataset] Warning: {e}, skipping to next frame")
+            next_item = (item + 1) % len(self._images)
+            if next_item == item:
+                raise RuntimeError("No valid frames found in dataset")
+            return self.__getitem__(next_item)
         return rec
 
     def get_image_desc(self, idx):
@@ -229,35 +289,70 @@ class BEVNuScenesDataset(data.Dataset):
 
         meta = metadata["meta"]
         images = [img_desc for img_desc in metadata["images"] if img_desc["id"] in lst]
-
-        return meta, images, img_map
+        
+        # Filter out images with missing RGB files
+        valid_images = []
+        for img_desc in images:
+            try:
+                # Get the relative path from img_map
+                rel_path = img_map["front"]["{}.png".format(img_desc['id'])]
+                
+                # Handle path correctly
+                root_normalized = str(Path(self.nuscenes_root_dir).as_posix().rstrip('/'))
+                rel_path_normalized = rel_path.replace('\\', '/')
+                
+                img_file = str(Path(self.nuscenes_root_dir) / rel_path_normalized)
+                
+                if os.path.exists(img_file):
+                    valid_images.append(img_desc)
+                else:
+                    print(f"[Dataset] Skipping {img_desc['id']}: RGB image not found at {img_file}")
+            except KeyError:
+                print(f"[Dataset] Skipping {img_desc['id']}: Not found in image map")
+                continue
+        
+        print(f"[Dataset] Loaded {len(valid_images)} valid images (filtered out {len(images) - len(valid_images)} missing frames)")
+        
+        return meta, valid_images, img_map
 
     def _load_item(self, item_idx):
         img_desc = self._images[item_idx]
 
-        # Get the RGB file names
-        img_file = [str(Path(self.nuscenes_root_dir) / self._img_map[camera]["{}.png".format(img_desc['id'])])
-                    for camera in self.rgb_cameras]
-        if all([(not os.path.exists(img)) for img in img_file]):
-            raise IOError("RGB image not found! Name: {}".format(img_desc['id']))
+        # Get the relative path from img_map
+        rel_path = self._img_map["front"]["{}.png".format(img_desc['id'])]
+        
+        # Handle path correctly
+        rel_path_normalized = rel_path.replace('\\', '/')
+        img_file = str(Path(self.nuscenes_root_dir) / rel_path_normalized)
+        
+        if not os.path.exists(img_file):
+            raise IOError("RGB image not found! Name: {}, Path: {}".format(img_desc['id'], img_file))
 
         # Load the images
-        img = [Image.open(rgb).convert(mode="RGB") for rgb in img_file]
+        img = [Image.open(img_file).convert(mode="RGB")]
 
         # Load the BEV mask
         bev_msk_file = str(Path(self._bev_msk_dir) / "{}.png".format(img_desc['id']))
+        if not os.path.exists(bev_msk_file):
+            raise IOError("BEV mask not found! Name: {}".format(img_desc['id']))
         bev_msk = [Image.open(bev_msk_file)]
 
         # Load the VF mask
         vf_msk_file = str(Path(self._vf_msk_dir) / "{}.png".format(img_desc["id"]))
+        if not os.path.exists(vf_msk_file):
+            raise IOError("VF mask not found! Name: {}".format(img_desc['id']))
         vf_msk = [Image.open(vf_msk_file)]
 
         # Load the weight map
         weights_msk_file = str(Path(self._weights_msk_dir) / "{}.png".format(img_desc['id']))
-        weights_msk = cv2.imread(weights_msk_file, cv2.IMREAD_UNCHANGED).astype(float)
-        if weights_msk is not None:
-            weights_msk_combined = (weights_msk[:, :, 0] + (weights_msk[:, :, 1] / 10000)) * 10000
-            weights_msk_combined = [Image.fromarray(weights_msk_combined.astype(np.int32))]
+        if os.path.exists(weights_msk_file):
+            weights_msk = cv2.imread(weights_msk_file, cv2.IMREAD_UNCHANGED)
+            if weights_msk is not None:
+                weights_msk = weights_msk.astype(float)
+                weights_msk_combined = (weights_msk[:, :, 0] + (weights_msk[:, :, 1] / 10000)) * 10000
+                weights_msk_combined = [Image.fromarray(weights_msk_combined.astype(np.int32))]
+            else:
+                weights_msk_combined = None
         else:
             weights_msk_combined = None
 
@@ -314,23 +409,31 @@ class BEVNuScenesDataset(data.Dataset):
         return len(self._images)
 
     def __getitem__(self, item):
-        img, bev_msk, vf_msk, wt_mask, cat, iscrowd, calib, idx = self._load_item(item)
-        rec = self.transform(img=img, bev_msk=bev_msk, front_msk=vf_msk, weights_msk=wt_mask, cat=cat, iscrowd=iscrowd,
-                             calib=calib)
-        size = (img[0].size[1], img[0].size[0])
+        try:
+            img, bev_msk, vf_msk, wt_mask, cat, iscrowd, calib, idx = self._load_item(item)
+            rec = self.transform(img=img, bev_msk=bev_msk, front_msk=vf_msk, weights_msk=wt_mask, cat=cat, iscrowd=iscrowd,
+                                 calib=calib)
+            size = (img[0].size[1], img[0].size[0])
 
-        # Close the files
-        for i in img:
-            i.close()
-        for m in bev_msk:
-            m.close()
-        if vf_msk is not None:
-            for m in vf_msk:
+            # Close the files
+            for i in img:
+                i.close()
+            for m in bev_msk:
                 m.close()
+            if vf_msk is not None:
+                for m in vf_msk:
+                    m.close()
 
-        rec["idx"] = idx
-        rec["size"] = size
-        return rec
+            rec["idx"] = idx
+            rec["size"] = size
+            return rec
+        except (IOError, FileNotFoundError) as e:
+            # Skip missing frames by returning the next valid frame
+            print(f"[Dataset] Warning: {e}, skipping to next frame")
+            next_item = (item + 1) % len(self._images)
+            if next_item == item:
+                raise RuntimeError("No valid frames found in dataset")
+            return self.__getitem__(next_item)
 
     def get_image_desc(self, idx):
         """Look up an image descriptor given the id"""

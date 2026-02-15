@@ -285,7 +285,7 @@ def check_performance_mode():
     if is_native_windows():
         print("[Perf] Running on native Windows")
         print("[Perf] For best performance, consider using WSL2")
-        suggest_wsl2_installation()
+        # Skip WSL2 suggestion to avoid encoding issues on Windows
         return 'native_windows'
     elif is_wsl2():
         print("[Perf] Running on WSL2 - optimal configuration")

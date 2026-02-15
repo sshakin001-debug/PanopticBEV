@@ -38,11 +38,18 @@ def _roi_sampling_forward_pytorch(x, bbx, idx, roi_size, interpolation, padding,
     
     Uses grid_sample for bilinear interpolation.
     """
+    # Store original dtype and convert to float if needed
+    # F.grid_sample on CUDA does not support Long (int64) tensors
+    original_dtype = x.dtype
+    needs_conversion = not torch.is_floating_point(x)
+    if needs_conversion:
+        x = x.float()
+    
     batch_size, num_channels, height, width = x.shape
     num_rois = bbx.size(0)
     roi_h, roi_w = roi_size
     
-    # Initialize output
+    # Initialize output (always use current x dtype, which is float if conversion was needed)
     output = torch.zeros(num_rois, num_channels, roi_h, roi_w, 
                         dtype=x.dtype, device=x.device)
     
@@ -86,8 +93,8 @@ def _roi_sampling_forward_pytorch(x, bbx, idx, roi_size, interpolation, padding,
         mode = 'bilinear' if interpolation == InterpolationFallback.Bilinear else 'nearest'
         
         sampled = F.grid_sample(
-            x[batch_idx:batch_idx+1], 
-            grid,
+            x[batch_idx:batch_idx+1].float(),  # Make sure input is float
+            grid.float(),  # Make sure grid is float
             mode=mode,
             padding_mode=padding_mode,
             align_corners=False
