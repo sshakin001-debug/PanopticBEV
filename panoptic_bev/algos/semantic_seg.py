@@ -28,7 +28,7 @@ class SemanticSegLoss:
 
         rows = torch.arange(0, out_shape[0])
         cols = torch.arange(0, out_shape[1])
-        rr, cc = torch.meshgrid(rows, cols)
+        rr, cc = torch.meshgrid(rows, cols, indexing='ij')
         idx_mesh = torch.cat([rr.unsqueeze(0), cc.unsqueeze(0)], dim=0)
         ego_position = torch.tensor([out_shape[0] // 2, 0]).view(-1, 1, 1)
         pos_mesh = idx_mesh - ego_position

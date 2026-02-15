@@ -257,7 +257,7 @@ class Perspective2OrthographicWarper(nn.Module):
     def _make_grid(self, extents, resolution):
     # Create a grid of coordinates in the birds-eye-view
         x1, z1, x2, z2 = extents
-        zz, xx = torch.meshgrid(torch.arange(z1, z2, resolution), torch.arange(x1, x2, resolution))
+        zz, xx = torch.meshgrid(torch.arange(z1, z2, resolution), torch.arange(x1, x2, resolution), indexing='ij')
 
         return torch.stack([xx, zz], dim=-1)
 

@@ -170,7 +170,7 @@ class DetectionAlgoFPN(DetectionAlgo):
         return target_level.clamp(min=self.min_level, max=self.min_level + self.levels - 1)
 
     def _rois(self, x, proposals, proposals_idx, img_size):
-        stride = proposals.new([fs / os for fs, os in zip(x.shape[-2:], img_size)])
+        stride = torch.tensor([fs / os for fs, os in zip(x.shape[-2:], img_size)], device=proposals.device, dtype=proposals.dtype)
         proposals = (proposals - 0.5) * stride.repeat(2) + 0.5
         return roi_sampling(x, proposals, proposals_idx, self.roi_size)
 
@@ -305,7 +305,7 @@ class InstanceSegAlgoFPN(InstanceSegAlgo):
         return target_level.clamp(min=self.min_level, max=self.min_level + self.levels - 1)
 
     def _rois(self, x, proposals, proposals_idx, img_size):
-        stride = proposals.new([fs / os for fs, os in zip(x.shape[-2:], img_size)])
+        stride = torch.tensor([fs / os for fs, os in zip(x.shape[-2:], img_size)], device=proposals.device, dtype=proposals.dtype)
         proposals = (proposals - 0.5) * stride.repeat(2) + 0.5
         return roi_sampling(x, proposals, proposals_idx, self.roi_size)
 

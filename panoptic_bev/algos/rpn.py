@@ -141,7 +141,7 @@ class AnchorMatcher:
         num_neg = self.num_samples - num_pos
         neg_idx = torch.nonzero(match == -1).view(-1)
         if neg_idx.numel() > num_neg:
-            rand_selection = (torch.randperm(neg_idx.numel(), dtype=torch.long).to(match.device))[num_neg:]
+            rand_selection = torch.randperm(neg_idx.numel(), dtype=torch.long, device=match.device)[num_neg:]
             match[neg_idx[rand_selection]] = -2
 
     @staticmethod

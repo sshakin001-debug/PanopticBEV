@@ -225,8 +225,8 @@ def invert_roi_bbx(bbx, roi_size, img_size):
     """Compute bbx coordinates to perform inverse roi sampling"""
     bbx_size = bbx[:, 2:] - bbx[:, :2]
     return torch.cat([
-        -bbx.new(roi_size) * bbx[:, :2] / bbx_size,
-        bbx.new(roi_size) * (bbx.new(img_size) - bbx[:, :2]) / bbx_size
+        -torch.tensor(roi_size, device=bbx.device, dtype=bbx.dtype) * bbx[:, :2] / bbx_size,
+        torch.tensor(roi_size, device=bbx.device, dtype=bbx.dtype) * (torch.tensor(img_size, device=bbx.device, dtype=bbx.dtype) - bbx[:, :2]) / bbx_size
     ], dim=1)
 
 

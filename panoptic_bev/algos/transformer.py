@@ -32,7 +32,7 @@ class TransformerVFLoss:
             logits_i = vf_logits_list[idx]
 
             scale = logits_i.shape[2] / gt.shape[2]
-            gt_i = F.interpolate(gt.type(torch.float), scale_factor=scale, mode="nearest").squeeze(0).type(torch.long)
+            gt_i = F.interpolate(gt.to(dtype=torch.float), scale_factor=scale, mode="nearest").squeeze(0).to(dtype=torch.long)
 
             vf_loss = F.cross_entropy(logits_i, gt_i.squeeze(1), ignore_index=2, reduction=('mean'))
             vf_sem_loss.append(vf_loss)
@@ -54,7 +54,7 @@ class TransformerRegionSupervisionLoss:
             logits_i = v_region_logits_list[idx]
 
             scale = logits_i.shape[2] / gt.shape[2]
-            gt_i = F.interpolate(gt.type(torch.float), scale_factor=scale, mode="nearest")
+            gt_i = F.interpolate(gt.to(dtype=torch.float), scale_factor=scale, mode="nearest")
 
             loss_i = F.binary_cross_entropy_with_logits(logits_i, gt_i, reduction='none')
             v_region_loss.append(loss_i.mean())

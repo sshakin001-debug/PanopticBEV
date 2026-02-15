@@ -6,6 +6,14 @@ from torchvision.transforms import functional as tfn
 from torchvision.transforms import ColorJitter
 import torchvision.transforms.functional as F
 
+# Compatibility for PIL Image.NEAREST deprecation
+try:
+    NEAREST = Image.Resampling.NEAREST
+    BILINEAR = Image.Resampling.BILINEAR
+except AttributeError:
+    NEAREST = Image.NEAREST
+    BILINEAR = Image.BILINEAR
+
 from panoptic_bev.utils.bbx import extract_boxes
 
 
@@ -87,17 +95,17 @@ class BEVTransform:
         if bev_msk is not None:
             in_msk_w, in_msk_h = bev_msk[0].size[0], bev_msk[0].size[1]
             out_msk_w, out_msk_h = int(in_msk_w * self.scale), int(in_msk_h * self.scale)
-            bev_msk = [m.resize((out_msk_w, out_msk_h), Image.NEAREST) for m in bev_msk]
+            bev_msk = [m.resize((out_msk_w, out_msk_h), NEAREST) for m in bev_msk]
 
         if front_msk is not None:
             in_msk_w, in_msk_h = front_msk[0].size[0], front_msk[0].size[1]
             out_msk_w, out_msk_h = int(in_msk_w * self.scale), int(in_msk_h * self.scale)
-            front_msk = [m.resize((out_msk_w, out_msk_h), Image.NEAREST) for m in front_msk]
+            front_msk = [m.resize((out_msk_w, out_msk_h), NEAREST) for m in front_msk]
 
         if weights_msk is not None:
             in_msk_w, in_msk_h = weights_msk[0].size[0], weights_msk[0].size[1]
             out_msk_w, out_msk_h = int(in_msk_w * self.scale), int(in_msk_h * self.scale)
-            weights_msk = [m.resize((out_msk_w, out_msk_h), Image.BILINEAR) for m in weights_msk]
+            weights_msk = [m.resize((out_msk_w, out_msk_h), BILINEAR) for m in weights_msk]
 
         return img, bev_msk, front_msk, weights_msk
 
@@ -213,8 +221,8 @@ class BEVTransform:
 
         # Resize the RGB image and the front mask to the given dimension
         if self.front_resize:
-            img = self._resize(img, Image.BILINEAR)
-            front_msk = self._resize(front_msk, Image.NEAREST)
+            img = self._resize(img, BILINEAR)
+            front_msk = self._resize(front_msk, NEAREST)
 
         # Scale the images and the mask to a smaller value
         if self.scale:

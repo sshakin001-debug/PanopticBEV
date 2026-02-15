@@ -153,8 +153,13 @@ class InstanceSegAlgo:
 
                     iis_lbl_i = ids_i[match_i[pos]]
                     # Compute instance segmentation masks
+                    # Ensure proper 4D shape for roi_sampling (batch, channels, height, width)
+                    if msk_i.dim() == 2:
+                        msk_i = msk_i.unsqueeze(0).unsqueeze(0)  # (H, W) -> (1, 1, H, W)
+                    elif msk_i.dim() == 3:
+                        msk_i = msk_i.unsqueeze(0)  # (C, H, W) -> (1, C, H, W)
                     msk_i = roi_sampling(
-                        msk_i.unsqueeze(0), proposals_i[pos], msk_i.new_zeros(pos.long().sum().item()),
+                        msk_i, proposals_i[pos], msk_i.new_zeros(pos.long().sum().item()),
                         self.lbl_roi_size, interpolation="nearest")
 
                     # Calculate mask segmentation labels

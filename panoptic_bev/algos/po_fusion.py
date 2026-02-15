@@ -110,7 +110,7 @@ class PanopticFusionAlgo:
                     h = max((y_max - y_min + 1), 1)
 
                     roi_edge = masks_i.shape[2]
-                    mask = F.upsample(masks_i[box_id, :, :].view(1, 1, roi_edge, roi_edge), size=(h, w),
+                    mask = F.interpolate(masks_i[box_id, :, :].view(1, 1, roi_edge, roi_edge), size=(h, w),
                                       mode="bilinear", align_corners=False).squeeze(0)
                     x_min = max(ref_box[1], 0)
                     x_max = min(ref_box[3] + 1, img_size[1])

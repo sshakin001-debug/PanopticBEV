@@ -17,7 +17,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 
 # CRITICAL: Setup must happen BEFORE importing torch.distributed
 from panoptic_bev.utils.windows_performance import (
@@ -180,7 +180,7 @@ def train_with_amp(model, dataloader, optimizer, scaler, device, epoch):
         optimizer.zero_grad()
         
         # Automatic Mixed Precision
-        with autocast(enabled=True):
+        with autocast(device_type='cuda', enabled=True):
             if isinstance(targets, dict):
                 outputs = model(images, targets)
             else:
