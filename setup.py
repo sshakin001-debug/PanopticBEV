@@ -4,6 +4,9 @@ import platform
 import setuptools
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
+# Define the base directory early so it can be used in make_extension
+here = path.abspath(path.dirname(__file__))
+
 
 def get_cuda_architectures():
     """
@@ -71,6 +74,14 @@ def make_extension(name, package):
         # MSVC-compatible flags
         cxx_flags = ["/O2"]
         nvcc_flags.append("-Xcompiler=/wd4819")  # Disable Unicode warnings
+        # Allow VS 2025 (unsupported but works)
+        nvcc_flags.append("-allow-unsupported-compiler")
+        # Fix for PyTorch header ambiguity with VS 2025
+        nvcc_flags.append("-DTORCH_DYNAMO_DISABLE_COMPILED_AUTOGRAD")
+        # Force 64-bit compilation to fix pointer size mismatch
+        nvcc_flags.append("-m64")
+        nvcc_flags.append("-Xcompiler=-m64")
+        nvcc_flags.append("--machine=64")
     
     return CUDAExtension(
         name="{}.{}._backend".format(package, name),
@@ -79,11 +90,12 @@ def make_extension(name, package):
             "cxx": cxx_flags,
             "nvcc": nvcc_flags,
         },
-        include_dirs=["include/"],
+        include_dirs=[
+            path.join(here, "include"),  # Absolute path to include directory
+            path.join(here, "src", name)  # Absolute path to source directory
+        ],
     )
 
-
-here = path.abspath(path.dirname(__file__))
 
 setuptools.setup(
     # Meta-data

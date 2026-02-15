@@ -703,7 +703,7 @@ def main(args):
     else:
         rank = 0
         world_size = 1
-        device_id, device = rank, torch.device(rank+3)
+        device_id, device = rank, torch.device(rank)
 
     # Create directories
     if not args.debug:

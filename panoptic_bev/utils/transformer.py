@@ -33,20 +33,20 @@ def compute_extrinsic_matrix(translation, rotation):
 
     R_x = np.array([[1, 0, 0],
                     [0, np.cos(theta_w2c_x), -np.sin(theta_w2c_x)],
-                    [0, np.sin(theta_w2c_x), np.cos(theta_w2c_x)]], dtype=np.float)
+                    [0, np.sin(theta_w2c_x), np.cos(theta_w2c_x)]], dtype=np.float64)
     R_y = np.array([[np.cos(theta_w2c_y), 0, np.sin(theta_w2c_y)],
                     [0, 1, 0],
-                    [-np.sin(theta_w2c_y), 0, np.cos(theta_w2c_y)]], dtype=np.float)
+                    [-np.sin(theta_w2c_y), 0, np.cos(theta_w2c_y)]], dtype=np.float64)
     R_z = np.array([[np.cos(theta_w2c_z), -np.sin(theta_w2c_z), 0],
                     [np.sin(theta_w2c_z), np.cos(theta_w2c_z), 0],
-                    [0, 0, 1]], dtype=np.float)
+                    [0, 0, 1]], dtype=np.float64)
 
     R = (R_y @ (R_x @ R_z))
 
-    t = -np.array(translation, dtype=np.float)
+    t = -np.array(translation, dtype=np.float64)
     t_rot = np.matmul(R, np.expand_dims(t, axis=1))
 
-    extrinsic = np.zeros((3, 4), dtype=np.float)
+    extrinsic = np.zeros((3, 4), dtype=np.float64)
     extrinsic[:3, :3] = R[:3, :3]
     extrinsic[:, 3] = t_rot.squeeze(1)
 
