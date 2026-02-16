@@ -1,4 +1,9 @@
-#include <ATen/ATen.h>
+#include <torch/extension.h>
+#include <vector>
+#include <valarray>
+#include <cmath>
+
+#include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAStream.h>
 #include <ATen/cuda/detail/IndexUtils.cuh>
 

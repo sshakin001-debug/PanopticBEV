@@ -181,7 +181,8 @@ class ROISampling(autograd.Function):
     @staticmethod
     def forward(ctx, x, bbx, idx, roi_size, interpolation, padding, valid_mask):
         ctx.save_for_backward(bbx, idx)
-        ctx.input_shape = (x.size(0), x.size(1), x.size(2), x.size(3))
+        # Store only (batch, height, width) - channels is inferred from dy in backward
+        ctx.input_shape = (x.size(0), x.size(2), x.size(3))
         ctx.valid_mask = valid_mask
 
         try:

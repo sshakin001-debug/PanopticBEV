@@ -69,19 +69,14 @@ def make_extension(name, package):
     ] + get_cuda_architectures()
     
     # Windows-specific flags
-    cxx_flags = ["-O3"]
+    cxx_flags = ["/O2"]
     if platform.system() == 'Windows':
         # MSVC-compatible flags
-        cxx_flags = ["/O2"]
         nvcc_flags.append("-Xcompiler=/wd4819")  # Disable Unicode warnings
         # Allow VS 2025 (unsupported but works)
         nvcc_flags.append("-allow-unsupported-compiler")
-        # Fix for PyTorch header ambiguity with VS 2025
-        nvcc_flags.append("-DTORCH_DYNAMO_DISABLE_COMPILED_AUTOGRAD")
-        # Force 64-bit compilation to fix pointer size mismatch
-        nvcc_flags.append("-m64")
-        nvcc_flags.append("-Xcompiler=-m64")
-        nvcc_flags.append("--machine=64")
+        # Use MSVC-compatible flags only
+        nvcc_flags.append("-Xcompiler=/Zc:__cplusplus")  # Fix C++ version macro
     
     return CUDAExtension(
         name="{}.{}._backend".format(package, name),

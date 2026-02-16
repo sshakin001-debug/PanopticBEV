@@ -1,13 +1,9 @@
-// Fix for VS 2025: Disable compiled autograd which has std:: ambiguity issues
-// Must be included before any ATen headers
-#if defined(_MSC_VER) && _MSC_VER >= 1940  // VS 2025+
-#define TORCH_DYNAMO_DISABLE_COMPILED_AUTOGRAD
-#endif
-
+#include <torch/extension.h>
 #include <vector>
-#include <valarray>  // Fix for VS 2025 std ambiguity
+#include <valarray>
+#include <cmath>
 
-#include <ATen/ATen.h>
+#include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAStream.h>
 #include <ATen/cuda/detail/IndexUtils.cuh>
 
