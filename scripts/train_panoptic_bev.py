@@ -152,18 +152,18 @@ def make_dataloader(args, config, rank, world_size):
     gpu_config = get_memory_optimized_config()
     is_wsl = os.path.exists('/proc/version') and 'microsoft' in open('/proc/version').read().lower()
     
-    # Determine worker count
+    # Determine worker count - read from config file
     if is_wsl:
         train_workers = dl_config.getint("train_workers", 4)
         val_workers = dl_config.getint("val_workers", 2)
         persistent = True
         pin_memory = True
     else:
-        # Native Windows - use optimized settings
-        train_workers = 4  # Optimized value
-        val_workers = 0    # Validation doesn't need workers
-        persistent = True  # KEY for performance
-        pin_memory = True  # Safe with spawn method
+        # Native Windows - read from config (kitti.ini)
+        train_workers = dl_config.getint("train_workers", 0)  # Default to 0 for Windows
+        val_workers = dl_config.getint("val_workers", 0)
+        persistent = train_workers > 0  # Only persistent if workers > 0
+        pin_memory = dl_config.getboolean("pin_memory", fallback=False)  # Default False for Windows
     
     log_info("DataLoader: workers=%d, persistent=%s, pin_memory=%s", 
              train_workers, persistent, pin_memory, debug=args.debug)
@@ -370,12 +370,15 @@ def make_model(args, config, num_thing, num_stuff):
     po_fusion_algo = PanopticFusionAlgo(po_loss, classes["stuff"], classes["thing"], 1)
 
     # Create the BEV network
-    return PanopticBevNet(body, bev_transformer, rpn_head, roi_head, sem_head, transformer_algo, rpn_algo, roi_algo,
+    log_info("Creating PanopticBEV model...", debug=args.debug)
+    model = PanopticBevNet(body, bev_transformer, rpn_head, roi_head, sem_head, transformer_algo, rpn_algo, roi_algo,
                           sem_algo, po_fusion_algo, args.train_dataset, classes=classes,
                           front_vertical_classes=transformer_config.getstruct("front_vertical_classes"),
                           front_flat_classes=transformer_config.getstruct("front_flat_classes"),
                           bev_vertical_classes=transformer_config.getstruct('bev_vertical_classes'),
                           bev_flat_classes=transformer_config.getstruct("bev_flat_classes"))
+    log_info("Model created successfully", debug=args.debug)
+    return model
 
 
 def make_optimizer(config, model, epoch_length):
@@ -479,6 +482,8 @@ def train(model, optimizer, scheduler, dataloader, meters, **varargs):
     data_time = time.time()
 
     for it, sample in enumerate(dataloader):
+        if it == 0:
+            log_info("First batch loaded, starting forward pass...", debug=varargs.get('debug', False))
         sample = {k: sample[k].cuda(device=varargs['device'], non_blocking=True) for k in NETWORK_INPUTS}
         sample['calib'], _ = pad_packed_images(sample['calib'])
 
@@ -725,7 +730,9 @@ def main(args):
     train_dataloader, val_dataloader = make_dataloader(args, config, rank, world_size)
 
     # Create model
+    log_info("Creating model...", debug=args.debug)
     model = make_model(args, config, train_dataloader.dataset.num_thing, train_dataloader.dataset.num_stuff)
+    log_info("Model creation complete", debug=args.debug)
 
     # Freeze modules based on the argument inputs
     model = freeze_modules(args, model)
@@ -743,6 +750,7 @@ def main(args):
         snapshot = None
 
     # Init GPU stuff
+    log_info("Moving model to GPU...", debug=args.debug)
     if not args.debug:
         torch.backends.cudnn.benchmark = config["general"].getboolean("cudnn_benchmark")
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)  # Convert batch norm to SyncBatchNorm
@@ -750,6 +758,7 @@ def main(args):
                                         find_unused_parameters=True)
     else:
         model = model.cuda(device)
+    log_info("Model on GPU", debug=args.debug)
 
     # Create optimizer
     optimizer, scheduler, batch_update, total_epochs = make_optimizer(config, model, len(train_dataloader))
@@ -787,6 +796,7 @@ def main(args):
 
     for epoch in range(starting_epoch, total_epochs):
         log_info("Starting epoch %d", epoch + 1, debug=args.debug)
+        log_info("GPU Memory: %.2f GB used", torch.cuda.memory_allocated() / 1e9, debug=args.debug)
         if not batch_update:
             scheduler.step(epoch)
 
